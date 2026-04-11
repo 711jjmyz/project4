@@ -67,9 +67,8 @@ uint64_t CacheLevel::reconstruct_addr(uint64_t tag, uint64_t index) {
     // TODO: Task 1 / Task 2
     // Rebuild a block-aligned address from a tag and set index.
     // This helper is useful when writing back an evicted dirty line.
-    (void)tag;
-    (void)index;
-    return 0;
+    return (tag << (index_bits + offset_bits)) | (index << offset_bits);
+    // a converse way of get_tag() and get_index()
 }
 
 void CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64_t cycle) {
@@ -111,10 +110,71 @@ int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     //    number of sets, or cache line size changes.
     // 7. Task 3: after demand access logic works, call the prefetcher here and
     //    install returned blocks through install_prefetch(...).
+    
+    //####################### 1. compute the offset, index and tag from the address
+    int offset = offset_bits;
+    int index = get_index(addr);
+    uint64_t tag = get_tag(addr);
+    
+    //###################### 3. get the cache line using index
+    vector<CacheLine>& set = sets[index];
+    
+    //################################ 3.  search for a hit
+    int hit_way = -1;
+    for (int i = 0; i < config.associativity; i++) {
+        if (set[i].valid && set[i].tag == tag) {
+            hit_way = i;
+            break;
+        }
+    }
 
-    (void)addr;
-    (void)type;
-    (void)cycle;
+    //##################### 4. check whether hits
+    if (hit_way != -1) {
+         // ==================== HIT ====================
+         hits++;
+         policy->onHit(set, hit_way, cycle);
+
+         if (type == 'w') {
+             set[hit_way].dirty = true;
+         }
+
+         if (set[hit_way].is_prefetched) {
+             set[hit_way].is_prefetched = false;
+         }
+
+    } else {
+     // ==================== MISS ====================
+        misses++;
+    
+    // （1）find a victim line
+    int victim_way = -1;
+    for (int i = 0; i < config.associativity; i++) {
+        if (!set[i].valid) {
+            victim_way = i;
+            break;
+        }
+    }
+    
+    // (2) if no invalid line, use replacement policy to find a victim
+    if (victim_way == -1) {
+        victim_way = policy->getVictim(set);
+    }
+    
+    // (3) check wether the victim is dirty, if yes, write back to the next level
+    write_back_victim(set[victim_way], index, cycle);
+    
+    // (4) fetch the block from the next level
+    uint64_t block_addr = addr & ~(config.block_size - 1);
+    lat += next_level->access(block_addr, 'r', cycle);
+    
+    // (5) install the new line
+    set[victim_way].tag          = tag;
+    set[victim_way].valid        = true;
+    set[victim_way].dirty        = (type == 'w');
+    set[victim_way].is_prefetched = false;
+    policy->onMiss(set, victim_way, cycle);
+}
+
     return lat;
 }
 
