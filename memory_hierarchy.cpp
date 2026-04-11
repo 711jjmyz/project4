@@ -50,7 +50,9 @@ uint64_t CacheLevel::get_index(uint64_t addr) {
     // Compute the set index from the address.
     // Hint: remove block offset bits first, then keep only the index bits.
     (void)addr;
-    return 0;
+    return (addr >> offset_bits) & ((1 << index_bits) - 1);
+    // use right shift to remove block offset bits 
+    // use mask and & to keep only the index bits
 }
 
 uint64_t CacheLevel::get_tag(uint64_t addr) {
