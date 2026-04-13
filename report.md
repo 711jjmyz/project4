@@ -118,52 +118,26 @@ at a lower latency than main memory.
 
 ## 6. Task 3 Design Choices
 
-Task 3 目前仍在进行中，但已经完成了 prefetch 相关部分的基础实现。
+### Replacement Policies Implemented
 
-### 已完成的 Prefetcher
+- **LRU:** evicts the least recently used line based on timestamp (`last_access`).
+  Updated on every hit and miss.
+- **SRRIP:** assigns RRPV=2 on miss and RRPV=0 on hit. Evicts lines with RRPV=3,
+  aging all lines by +1 until a victim is found.
+- **BIP:** same as LRU but inserts new lines at the LRU position with probability
+  1/32, protecting hot data from scan pollution.
 
-目前已经实现：
+### Prefetchers Implemented
 
-- `NextLine` prefetcher
-- `Stride` prefetcher
-- `install_prefetch(...)` 预取填充路径
+- **NextLine:** on every access to block X, prefetches block X+1.
+- **Stride:** detects the stride between consecutive accesses and prefetches
+  the next block at the same stride distance.
 
-### NextLine 的实现思路
+### Custom Prefetcher
 
-- 将当前访问地址按 cache block 对齐
-- 预取下一个连续 block，即 `block_addr + block_size`
-- 每次访问最多发起一个 next-line 预取请求
-
-这种策略适合顺序访问或接近顺序访问的 workload。
-
-### Stride 的实现思路
-
-- 跟踪上一次访问的 block 地址 `last_block`
-- 计算本次 block 与上一次 block 的差值，得到 stride
-- 如果连续观察到相同 stride，则增加 `confidence`
-- 当 `confidence` 达到阈值后，预取 `current_block + stride`
-
-这种策略适合具有固定步长访问模式的 trace。
-
-### Prefetch Fill Path
-
-在 `memory_hierarchy.cpp` 中，已经补全 `install_prefetch(...)`，其行为为：
-
-- 先检查待预取 block 是否已经存在于当前 cache
-- 如果已存在，则不重复安装
-- 如果不存在，则优先寻找 invalid line
-- 若 set 已满，则复用 replacement policy 选择 victim
-- 若 victim 为 dirty，则复用已有 write-back helper 写回下层
-- 从下一层读取目标 block
-- 以 `clean` 状态安装，并标记 `is_prefetched = true`
-
-### 当前实现状态
-
-- prefetch 已经接入 demand access 之后的执行路径
-- `Prefetches Issued` 统计会在成功安装预取块时增加
-- 当前实现会让 prefetch 真实访问下一层，从而影响下层 traffic
-- 当前尚未与 personalized trace 结合进行最终调优
-- 最终最佳配置仍需等 `SRRIP` / `BIP` 完成后，与不同 prefetcher 组合一起测试
+No custom prefetcher was designed. The Stride prefetcher was sufficient to
+exploit the dominant stride=7 pattern in the personalized trace, achieving
+AMAT of 1.73 cycles which is below the Best_AMAT of 1.75 cycles.
 
 ## 7. Trace Analysis
 - **124090475 was used as the trace-generation seed**
@@ -203,7 +177,7 @@ The stride distribution is dominated by **stride=7 (48.08%)** and **stride=1
 | Level | Size  | Associativity | Block | Policy | Prefetcher |
 |-------|-------|--------------|-------|--------|------------|
 | L1    | 32KB  | 64-way        | 64B   | SRRIP  | Stride     |
-| L2    | 128KB | 8-way         | 64B   | LRU    | Stride     |
+| L2    | 128KB | 64-way         | 64B   | LRU    | Stride     |
 
 ## 8. Experimental Results
 
@@ -247,7 +221,7 @@ AMAT of **1.73 cycles**, below the Best_AMAT of 1.75 cycles.
 | Level | Size  | Associativity | Block | Policy | Prefetcher |
 |-------|-------|--------------|-------|--------|------------|
 | L1    | 32KB  | 64-way        | 64B   | SRRIP  | Stride     |
-| L2    | 128KB | 8-way         | 64B   | LRU    | Stride     |
+| L2    | 128KB | 64-way         | 64B   | LRU    | Stride     |
 
 **AMAT: 1.73 cycles** (below Best_AMAT of 1.75 cycles)
 
