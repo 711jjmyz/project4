@@ -48,7 +48,7 @@ private:
     uint64_t get_index(uint64_t addr);
     uint64_t get_tag(uint64_t addr);
     uint64_t reconstruct_addr(uint64_t tag, uint64_t index);
-    void write_back_victim(const CacheLine& line, uint64_t index, uint64_t cycle);
+    int write_back_victim(const CacheLine& line, uint64_t index, uint64_t cycle);
     
     // Internal function to install a prefetched line
     void install_prefetch(uint64_t addr, uint64_t cycle);

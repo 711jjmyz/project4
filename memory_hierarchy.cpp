@@ -72,7 +72,7 @@ uint64_t CacheLevel::reconstruct_addr(uint64_t tag, uint64_t index) {
     // a converse way of get_tag() and get_index()
 }
 
-void CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64_t cycle) {
+int CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64_t cycle) {
     // TODO: Task 1 / Task 2
     // Move dirty write-back logic into this helper.
     // Suggested steps:
@@ -82,12 +82,12 @@ void CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64
     // 4. Reconstruct the evicted block address from tag + index.
     // 5. Send a write access to the next level.
     if (!line.valid || !line.dirty || next_level == nullptr) {
-        return;
+        return 0;
     }
 
     ++write_backs;
     uint64_t victim_addr = reconstruct_addr(line.tag, index);
-    next_level->access(victim_addr, 'w', cycle);
+    return next_level->access(victim_addr, 'w', cycle);
 }
 
 int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
@@ -165,7 +165,7 @@ int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     }
     
     // (3) check wether the victim is dirty, if yes, write back to the next level
-    write_back_victim(set[victim_way], index, cycle);
+    lat += write_back_victim(set[victim_way], index, cycle);
     
     // (4) fetch the block from the next level
     uint64_t block_addr = addr & ~(config.block_size - 1);
