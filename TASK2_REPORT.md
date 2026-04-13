@@ -196,12 +196,52 @@ Task 2 的目标是在原有 `L1` 基础上加入 `L2`，理解多级 cache hier
 
 ## 6. Task 3 Design Choices
 
-Task 3 目前尚未完成，因此此部分先保留报告结构，后续补充：
+Task 3 目前仍在进行中，但已经完成了 prefetch 相关部分的基础实现。
 
-- 实现了哪些 replacement policies
-- 实现了哪些 prefetchers
-- 是否实现自定义 prefetcher
-- 为什么选择最终配置
+### 已完成的 Prefetcher
+
+目前已经实现：
+
+- `NextLine` prefetcher
+- `Stride` prefetcher
+- `install_prefetch(...)` 预取填充路径
+
+### NextLine 的实现思路
+
+- 将当前访问地址按 cache block 对齐
+- 预取下一个连续 block，即 `block_addr + block_size`
+- 每次访问最多发起一个 next-line 预取请求
+
+这种策略适合顺序访问或接近顺序访问的 workload。
+
+### Stride 的实现思路
+
+- 跟踪上一次访问的 block 地址 `last_block`
+- 计算本次 block 与上一次 block 的差值，得到 stride
+- 如果连续观察到相同 stride，则增加 `confidence`
+- 当 `confidence` 达到阈值后，预取 `current_block + stride`
+
+这种策略适合具有固定步长访问模式的 trace。
+
+### Prefetch Fill Path
+
+在 `memory_hierarchy.cpp` 中，已经补全 `install_prefetch(...)`，其行为为：
+
+- 先检查待预取 block 是否已经存在于当前 cache
+- 如果已存在，则不重复安装
+- 如果不存在，则优先寻找 invalid line
+- 若 set 已满，则复用 replacement policy 选择 victim
+- 若 victim 为 dirty，则复用已有 write-back helper 写回下层
+- 从下一层读取目标 block
+- 以 `clean` 状态安装，并标记 `is_prefetched = true`
+
+### 当前实现状态
+
+- prefetch 已经接入 demand access 之后的执行路径
+- `Prefetches Issued` 统计会在成功安装预取块时增加
+- 当前实现会让 prefetch 真实访问下一层，从而影响下层 traffic
+- 当前尚未与 personalized trace 结合进行最终调优
+- 最终最佳配置仍需等 `SRRIP` / `BIP` 完成后，与不同 prefetcher 组合一起测试
 
 ## 7. Trace Analysis
 
@@ -253,6 +293,37 @@ make task2
 | Configuration | L1 Hit Rate | L2 Hit Rate | Main Memory Accesses | Total Cycles | AMAT |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | L1+L2, 16KB/64KB, 4-way, 64B, LRU, None | 21.43% | 54.00% | 23 | 2556 | 45.64 |
+
+### Prefetch Sanity Checks
+
+在 Task 3 的 prefetch 部分完成后，先使用 `trace_sanity.txt` 做基础验证，确认：
+
+- 程序可以正常运行
+- `Prefetches Issued` 会变化
+- 命中率和 `AMAT` 会随着 prefetch 策略改变而变化
+
+测试命令：
+
+```bash
+./cache_sim trace_sanity.txt 32 8 64 1 100 LRU NextLine
+./cache_sim trace_sanity.txt 32 8 64 1 100 LRU Stride
+./cache_sim trace_sanity.txt 32 8 64 1 100 LRU NextLine --enable-l2 LRU None
+```
+
+代表性结果如下：
+
+| Configuration | L1 Hit Rate | Prefetches Issued | Main Memory Accesses | Total Cycles | AMAT |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| L1 only, `LRU + NextLine` | 26.79% | 44 | 87 | 4356 | 77.79 |
+| L1 only, `LRU + Stride` | 71.43% | 33 | 52 | 1756 | 31.36 |
+| L1+L2, `L1: LRU + NextLine`, `L2: LRU + None` | 26.79% | 44 | 43 | 2228 | 39.79 |
+
+这些结果说明：
+
+- `Prefetches Issued` 已经正常统计
+- 不同 prefetcher 会显著影响命中率和主存流量
+- `Stride` 在当前 sanity trace 上效果明显优于 `NextLine`
+- 但最终结论仍需基于 personalized trace 再做分析
 
 ### 结果对比
 
@@ -307,6 +378,9 @@ make task2
 - 修复 dirty write-back latency 未计入 `Total Cycles` / `AMAT` 的 bug
 - 重新运行 `make task1`、`make task2` 以及多组额外几何配置测试
 - 根据修正后的真实结果更新本报告中的表格与说明
+- 实现 `NextLine` 与 `Stride` prefetcher
+- 在 cache access 路径中接入 prefetch 触发逻辑
+- 实现 `install_prefetch(...)` 预取安装路径并完成基础 sanity check
 
 如果最终提交版本要求附上对话链接，请在此处补充：
 

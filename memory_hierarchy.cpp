@@ -92,6 +92,7 @@ int CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64_
 
 int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     int lat = config.latency;
+    bool was_miss = false;
 
     // TODO: Task 1
     // 1. Derive the address fields for the current cache geometry:
@@ -149,6 +150,7 @@ int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     } else {
      // ==================== MISS ====================
         misses++;
+        was_miss = true;
     
     // （1）find a victim line
     int victim_way = -1;
@@ -179,17 +181,54 @@ int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     policy->onMiss(set, victim_way, cycle);
 }
 
+    vector<uint64_t> prefetches = prefetcher->calculatePrefetch(addr, was_miss);
+    for (uint64_t prefetch_addr : prefetches) {
+        if (install_prefetch(prefetch_addr, cycle)) {
+            ++prefetch_issued;
+        }
+    }
+
     return lat;
 }
 
-void CacheLevel::install_prefetch(uint64_t addr, uint64_t cycle) {
+bool CacheLevel::install_prefetch(uint64_t addr, uint64_t cycle) {
     // TODO: Task 3
     // Implement a prefetch fill path similar to the miss path in access(), but
     // treat prefetched lines as clean and mark is_prefetched = true.
     // If you evict a dirty victim during prefetch installation, reuse
     // write_back_victim(...) instead of duplicating that logic.
-    (void)addr;
-    (void)cycle;
+    uint64_t block_addr = addr & ~(uint64_t)(config.block_size - 1);
+    uint64_t index = get_index(block_addr);
+    uint64_t tag = get_tag(block_addr);
+    vector<CacheLine>& set = sets[index];
+
+    for (int i = 0; i < config.associativity; ++i) {
+        if (set[i].valid && set[i].tag == tag) {
+            return false;
+        }
+    }
+
+    int victim_way = -1;
+    for (int i = 0; i < config.associativity; ++i) {
+        if (!set[i].valid) {
+            victim_way = i;
+            break;
+        }
+    }
+
+    if (victim_way == -1) {
+        victim_way = policy->getVictim(set);
+    }
+
+    write_back_victim(set[victim_way], index, cycle);
+    next_level->access(block_addr, 'r', cycle);
+
+    set[victim_way].tag = tag;
+    set[victim_way].valid = true;
+    set[victim_way].dirty = false;
+    set[victim_way].is_prefetched = true;
+    policy->onMiss(set, victim_way, cycle);
+    return true;
 }
 
 void CacheLevel::printStats() {

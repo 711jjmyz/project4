@@ -51,7 +51,7 @@ private:
     int write_back_victim(const CacheLine& line, uint64_t index, uint64_t cycle);
     
     // Internal function to install a prefetched line
-    void install_prefetch(uint64_t addr, uint64_t cycle);
+    bool install_prefetch(uint64_t addr, uint64_t cycle);
 
 public:
     CacheLevel(std::string name, CacheConfig cfg, MemoryObject* next);
