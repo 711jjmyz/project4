@@ -56,24 +56,28 @@ int SRRIPPolicy::getVictim(std::vector<CacheLine>& set) {
 }
 
 void BIPPolicy::onHit(std::vector<CacheLine>& set, int way, uint64_t cycle) {
-    (void)set;
-    (void)way;
-    (void)cycle;
+     set[way].last_access = cycle; 
     // TODO: hits still become MRU.
 }
 
 void BIPPolicy::onMiss(std::vector<CacheLine>& set, int way, uint64_t cycle) {
-    (void)set;
-    (void)way;
-    (void)cycle;
+    if (rand() % 32 == 0) {
+        set[way].last_access = 0;      // ramdomly insert at oldest position 
+    } else {
+        set[way].last_access = cycle;  
+    }
     // TODO: mostly insert at LRU position, but occasionally insert at MRU.
     // Hint: use insertion_counter and throttle.
 }
 
 int BIPPolicy::getVictim(std::vector<CacheLine>& set) {
-    (void)set;
-    // TODO: BIP usually uses the same victim selection as LRU.
-    return 0;
+        int victim = 0;
+    for (int i = 1; i < (int)set.size(); i++) {
+        if (set[i].last_access < set[victim].last_access) {
+            victim = i;
+        }
+    }
+    return victim;
 }
 
 ReplacementPolicy* createReplacementPolicy(std::string name) {

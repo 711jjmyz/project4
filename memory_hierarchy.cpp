@@ -87,7 +87,8 @@ int CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64_
 
     ++write_backs;
     uint64_t victim_addr = reconstruct_addr(line.tag, index);
-    return next_level->access(victim_addr, 'w', cycle);
+    next_level->access(victim_addr, 'w', cycle);
+    return 0; 
 }
 
 int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
