@@ -27,23 +27,32 @@ int LRUPolicy::getVictim(std::vector<CacheLine>& set) {
 }
 
 void SRRIPPolicy::onHit(std::vector<CacheLine>& set, int way, uint64_t cycle) {
-    (void)set;
-    (void)way;
+    set[way].rrpv = 0;
     (void)cycle;
+    // we don't use cycle in SRRIP, because it don't need to check the newest line,
     // TODO: typically promote the line to RRPV=0.
 }
 
 void SRRIPPolicy::onMiss(std::vector<CacheLine>& set, int way, uint64_t cycle) {
-    (void)set;
-    (void)way;
+    set[way].rrpv = 2;
     (void)cycle;
     // TODO: insert with a long re-reference interval, e.g. RRPV=2.
 }
 
 int SRRIPPolicy::getVictim(std::vector<CacheLine>& set) {
-    (void)set;
-    // TODO: search for RRPV==3, otherwise age all lines and retry.
-    return 0;
+    while (true) {
+        // find rrpv == 3 
+        for (int i = 0; i < (int)set.size(); i++) {
+            if (set[i].rrpv == 3) {
+                return i;
+            }
+        }
+        // if not find, all lines rppv++ and retry
+        for (int i = 0; i < (int)set.size(); i++) {
+            set[i].rrpv++;
+        }
+    }
+    // TODO: search for RRPV==3, otherwise age all lines and retry.   
 }
 
 void BIPPolicy::onHit(std::vector<CacheLine>& set, int way, uint64_t cycle) {
