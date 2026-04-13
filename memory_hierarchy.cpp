@@ -49,7 +49,10 @@ uint64_t CacheLevel::get_index(uint64_t addr) {
     // TODO: Task 1
     // Compute the set index from the address.
     // Hint: remove block offset bits first, then keep only the index bits.
-    return (addr >> offset_bits) & ((1 << index_bits) - 1);
+    if (index_bits == 0) {
+        return 0;
+    }
+    return (addr >> offset_bits) & ((1ULL << index_bits) - 1);
     // use right shift to remove block offset bits 
     // use mask and & to keep only the index bits
 }
@@ -58,9 +61,7 @@ uint64_t CacheLevel::get_tag(uint64_t addr) {
     // TODO: Task 1
     // Compute the tag from the address.
     // Hint: shift away both block offset bits and set index bits.
-    int tag_bits = 64 - offset_bits - index_bits;
     return addr >> (offset_bits + index_bits);
-    // use right shift 
 }
 
 uint64_t CacheLevel::reconstruct_addr(uint64_t tag, uint64_t index) {
@@ -80,9 +81,13 @@ void CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64
     // 3. Increment the write-back counter.
     // 4. Reconstruct the evicted block address from tag + index.
     // 5. Send a write access to the next level.
-    (void)line;
-    (void)index;
-    (void)cycle;
+    if (!line.valid || !line.dirty || next_level == nullptr) {
+        return;
+    }
+
+    ++write_backs;
+    uint64_t victim_addr = reconstruct_addr(line.tag, index);
+    next_level->access(victim_addr, 'w', cycle);
 }
 
 int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
@@ -112,7 +117,6 @@ int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     //    install returned blocks through install_prefetch(...).
     
     //####################### 1. compute the offset, index and tag from the address
-    int offset = offset_bits;
     int index = get_index(addr);
     uint64_t tag = get_tag(addr);
     
